@@ -2,6 +2,6 @@
 
 Цели
 0) изучение библиотеки scikit-learn
-1) реализация алгоритмов Out of Set для Multi-dimensional Scaling и для Spectral Embedding
+1) реализация алгоритмов Out of Sample для Multi-dimensional Scaling и для Spectral Embedding
 2) групповая реализация алгоритма Грассмана-Штифеля
 3) Реализация алгоритмов восстановления для упомянутых способов уменьшения размерности
