@@ -496,7 +496,7 @@ class SpectralEmbedding(BaseEstimator):
                                              eigen_solver=self.eigen_solver,
                                              random_state=random_state,
                                              out_of_sample=self.out_of_sample)
-        if self.OoS:
+        if self.out_of_sample:
             embedding[1].n_neighbors = self.n_neighbors
             affinity_matrix = affinity_matrix.toarray().astype(bool)
             embedding[1].neighbor_count = affinity_matrix.sum(axis=-1)
@@ -540,7 +540,7 @@ class SpectralEmbedding(BaseEstimator):
             for k in range(self.n_components)[::-1]
         ))
 
-class SpectralEmbedding_OoS_data:
+class SpectralEmbeddingOoSData:
     def __init__(self, dataset=None, eigenvalues=None, eigenvectors=None, neighbor_count=None, max_neighbor_distances=None, n_neighbors=None, dd=None):
         self.dataset = dataset
         self.eigenvals = eigenvalues
