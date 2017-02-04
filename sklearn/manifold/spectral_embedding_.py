@@ -374,9 +374,6 @@ class SpectralEmbedding(BaseEstimator):
     Attributes
     ----------
 
-    embedding_ : array, shape = (n_samples, n_components)
-        Spectral embedding of the training matrix.
-
     affinity_matrix_ : array, shape = (n_samples, n_samples)
         Affinity_matrix constructed from samples or precomputed.
 
@@ -525,8 +522,20 @@ class SpectralEmbedding(BaseEstimator):
         return self.fit(X)
 
     def transform(self, data, point):
+        """transforms point according to data.
+
+        Parameters
+        ----------
+        data : SpectralEmbeddingOoSData, for a learning dataset
+
+        point : array, coordinates of a point
+
+        Returns
+        -------
+        embedding : array (n_componens), embedding of a point
+        """
         distances = euclidean_distances(point, data.dataset).reshape(-1)
-        neighbors = np.array(sorted(zip(distances, range(data.dataset.shape[0])), key=lambda x: x[0])[: data.n_neighbors])
+        neighbors = np.array(sorted(zip(distances, range(data.dataset.shape[0])), key=lambda x: x[0])[: self.n_neighbors])
         neighbors = set(neighbors[:, 1].astype(int))
         for i in range(len(distances)):
             if distances[i] < data.max_neighbor_dist[i]:
@@ -541,11 +550,33 @@ class SpectralEmbedding(BaseEstimator):
         ))
 
 class SpectralEmbeddingOoSData:
-    def __init__(self, dataset=None, eigenvalues=None, eigenvectors=None, neighbor_count=None, max_neighbor_distances=None, n_neighbors=None, dd=None):
+    """Data for out of sample for Spectral embedding.
+
+    Parameters
+    -----------
+    dataset : array-like, shape (n_samples, n_features)
+            Training vector, where n_samples is the number of samples
+            and n_features is the number of features.
+
+            If affinity is "precomputed"
+            X : array-like, shape (n_samples, n_samples),
+            Interpret X as precomputed adjacency graph computed from
+            samples.
+
+    eigenvals : array, eigenvalues of kernal-matrix
+
+    eigenvects : array, eigenvectors of kernel-matrix
+
+    neighbor_count : array, amount of neighbors for each of points
+
+    max_neighbor_distances : array distance to the furthest of neighbors for each point
+
+    dd : float, nobody knows what te ... that is but it's taken from YOUR code!
+    """
+    def __init__(self, dataset=None, eigenvalues=None, eigenvectors=None, neighbor_count=None, max_neighbor_distances=None, dd=None):
         self.dataset = dataset
         self.eigenvals = eigenvalues
         self.eigenvecs = eigenvectors
         self.neighbor_count = neighbor_count
         self.max_neighbor_dist = max_neighbor_distances
-        self.n_neighbors = n_neighbors
         self.dd = dd
