@@ -5,16 +5,202 @@ Multi-dimensional Scaling (MDS)
 # author: Nelle Varoquaux <nelle.varoquaux@gmail.com>
 # License: BSD
 
+# OoS author: Yaroslav Rebenko <yarebenko@gmail.com>
+# License: BSD?
+
 import numpy as np
 
 import warnings
 
-from ..base import BaseEstimator
-from ..metrics import euclidean_distances
-from ..utils import check_random_state, check_array, check_symmetric
-from ..externals.joblib import Parallel
-from ..externals.joblib import delayed
-from ..isotonic import IsotonicRegression
+from sklearn.base import BaseEstimator
+from sklearn.metrics import euclidean_distances
+from sklearn.utils import check_random_state, check_array, check_symmetric
+from sklearn.externals.joblib import Parallel
+from sklearn.externals.joblib import delayed
+from sklearn.isotonic import IsotonicRegression
+
+
+def _OoS_smacof_single(dissimilarities, init=None,
+                   max_iter=300, verbose=0, eps=1e-3):
+    """
+    Computes embedding of a point into the dataset embedding provided using the modified SMACOF algorithm.
+
+    Parameters
+    ----------
+    dissimilarities : ndarray, shape (n_samples, 1)
+        Pairwise dissimilarities between the new point and points of the learning dataset.
+
+    init : ndarray, shape (n_samples, n_components), optional, default: None
+        Starting configuration of the embedding to initialize the algorithm.
+        It must consist of the embedding of the learning dataset and an initial state for the new point.
+
+    max_iter : int, optional, default: 300
+        Maximum number of iterations of the SMACOF algorithm for a single run.
+
+    verbose : int, optional, default: 0
+        Level of verbosity.
+
+    eps : float, optional, default: 1e-3
+        Relative tolerance with respect to stress at which to declare
+        convergence.
+
+    Returns
+    -------
+    position : ndarray, shape (1, n_components)
+        Coordinates of the new point.
+
+    stress : float
+        The final value of the stress (sum of squared distance of the
+        disparities and the distances for all constrained points).
+
+    n_iter : int
+        The number of iterations corresponding to the best stress.
+    """
+
+    n_samples = len(dissimilarities)
+
+    X = init
+
+    old_stress = None
+    disparities = dissimilarities
+    for it in range(max_iter):
+        # Compute distance and monotonic regression
+        dis = euclidean_distances(X[-1, :].reshape(1, -1), X)
+
+        # Compute stress
+        stress = ((dis - disparities) ** 2).sum() / 2
+
+        # Update X[-1] using the Guttman transform
+        dis[:, -1][dis[:, -1] == 0] = 1e-5
+        ratio = disparities / dis
+        B = -ratio
+        B[-1] += ratio.sum()
+        X[-1, :] = (1. / n_samples * np.dot(B, X))
+
+        dis = np.sqrt((X ** 2).sum(axis=1)).sum()
+        if verbose >= 2:
+            print('it: %d, stress %s' % (it, stress))
+        if old_stress is not None:
+            if(old_stress - stress / dis) < eps:
+                if verbose:
+                    print('breaking at iteration %d with stress %s' % (it,
+                                                                       stress))
+                break
+        old_stress = stress / dis
+
+    return X, stress, it + 1
+
+
+def OoS_smacof(dissimilarities, init=None, n_init=1,
+           n_jobs=1, max_iter=300, verbose=0, eps=1e-3, random_state=None):
+    """
+    Computes embedding of a point into the dataset embedding provided using the modified SMACOF algorithm. 
+
+    The SMACOF (Scaling by MAjorizing a COmplicated Function) algorithm is a
+    multidimensional scaling algorithm which minimizes an objective function
+    (the *stress*) using a majorization technique. Stress majorization, also
+    known as the Guttman Transform, guarantees a monotone convergence of
+    stress, and is more powerful than traditional techniques such as gradient
+    descent.
+
+    The SMACOF algorithm for metric MDS can summarized by the following steps:
+
+    1. Set an initial start configuration, randomly or not.
+    2. Compute the stress
+    3. Compute the Guttman Transform
+    4. Iterate 2 and 3 until convergence.
+    
+    Modifications:
+    1. initial start is the embedding of the original dataset and a random point for the OoS point
+    2. Compute the stress
+    3. Coumpute the Guttman Transform for the added point.
+    4. Iterate 2 and 3 until convergence.
+    
+    
+
+    Parameters
+    ----------
+    dissimilarities : ndarray, shape (n_samples, 1)
+        Pairwise dissimilarities between the new point and points of the learning dataset.
+
+    init : ndarray, shape (n_samples, n_components), optional, default: None
+        Starting configuration of the embedding to initialize the algorithm.
+        It must consist of the embedding of the learning dataset and an initial state for the new point.
+
+    n_jobs : int, optional, default: 1
+        The number of jobs to use for the computation. If multiple
+        initializations are used (``n_init``), each run of the algorithm is
+        computed in parallel.
+
+        If -1 all CPUs are used. If 1 is given, no parallel computing code is
+        used at all, which is useful for debugging. For ``n_jobs`` below -1,
+        (``n_cpus + 1 + n_jobs``) are used. Thus for ``n_jobs = -2``, all CPUs
+        but one are used.
+
+    max_iter : int, optional, default: 300
+        Maximum number of iterations of the SMACOF algorithm for a single run.
+
+    verbose : int, optional, default: 0
+        Level of verbosity.
+
+    eps : float, optional, default: 1e-3
+        Relative tolerance with respect to stress at which to declare
+        convergence.
+
+    random_state : integer or numpy.RandomState, optional, default: None
+        The generator used to initialize the centers. If an integer is given,
+        it fixes the seed. Defaults to the global numpy random number
+        generator.
+
+    return_n_iter : bool, optional, default: False
+        Whether or not to return the number of iterations.
+
+    Returns
+    -------
+    position : ndarray, shape (1, n_components)
+        Coordinates of the new point.
+
+    Notes
+    -----
+    "Modern Multidimensional Scaling - Theory and Applications" Borg, I.;
+    Groenen P. Springer Series in Statistics (1997)
+
+    "Nonmetric multidimensional scaling: a numerical method" Kruskal, J.
+    Psychometrika, 29 (1964)
+
+    "Multidimensional scaling by optimizing goodness of fit to a nonmetric
+    hypothesis" Kruskal, J. Psychometrika, 29, (1964)
+    
+    For the modification we assume that the embedding converged. 
+    Thus the single new point would create negligible stress in the learning dataset embedding.
+    """
+
+    best_pos, best_stress = None, None
+
+    if n_jobs == 1:
+        for it in range(n_init):
+            pos, stress, n_iter_ = _OoS_smacof_single(
+                dissimilarities,
+                init=init,
+                max_iter=max_iter, verbose=verbose,
+                eps=eps)
+            if best_stress is None or stress < best_stress:
+                best_stress = stress
+                best_pos = pos.copy()
+    else:
+        seeds = random_state.randint(np.iinfo(np.int32).max, size=n_init)
+        results = Parallel(n_jobs=n_jobs, verbose=max(verbose - 1, 0))(
+            delayed(_OoS_smacof_single)(
+                dissimilarities,
+                init=init,
+                max_iter=max_iter, verbose=verbose,
+                eps=eps,)
+            for seed in seeds)
+        positions, stress, n_iters = zip(*results)
+        best = np.argmin(stress)
+        best_pos = positions[best]
+
+    return best_pos[-1, :]
 
 
 def _smacof_single(dissimilarities, metric=True, n_components=2, init=None,
@@ -368,7 +554,7 @@ class MDS(BaseEstimator):
     def _pairwise(self):
         return self.kernel == "precomputed"
 
-    def fit(self, X, y=None, init=None):
+    def fit(self, X, init=None):
         """
         Computes the position of the points in the embedding space
 
@@ -386,7 +572,7 @@ class MDS(BaseEstimator):
         self.fit_transform(X, init=init)
         return self
 
-    def fit_transform(self, X, y=None, init=None):
+    def fit_transform(self, X, init=None):
         """
         Fit the data from X, and returns the embedded coordinates
 
@@ -424,3 +610,10 @@ class MDS(BaseEstimator):
             return_n_iter=True)
 
         return self.embedding_
+
+    def transform(self, point, X):
+        return OoS_smacof(
+            np.append(euclidean_distances(point, X), [[0]]),
+            init=np.append(self.embedding_, [[0,0]], axis=0),
+            n_jobs=self.n_jobs, max_iter=self.max_iter, verbose=self.verbose,
+            eps=self.eps, random_state=self.random_state)
