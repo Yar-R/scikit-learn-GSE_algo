@@ -4,21 +4,24 @@
 #         Wei LI <kuantkid@gmail.com>
 # License: BSD 3 clause
 
+# OoS Author: Yaroslav Rebenko <yarebeno@gmail.com>
+# License: BSD
+
 import warnings
 import numpy as np
 from math import sqrt
 from scipy import sparse
 from scipy.linalg import eigh
 from scipy.sparse.linalg import lobpcg
-from ..base import BaseEstimator
-from ..externals import six
-from ..utils import check_random_state, check_array, check_symmetric
-from ..utils.extmath import _deterministic_vector_sign_flip
-from ..utils.graph import graph_laplacian
-from ..utils.sparsetools import connected_components
-from ..utils.arpack import eigsh
-from ..metrics.pairwise import rbf_kernel, euclidean_distances
-from ..neighbors import kneighbors_graph
+from sklearn.base import BaseEstimator
+from sklearn.externals import six
+from sklearn.utils import check_random_state, check_array, check_symmetric
+from sklearn.utils.extmath import _deterministic_vector_sign_flip
+from sklearn.utils.graph import graph_laplacian
+from sklearn.utils.sparsetools import connected_components
+from sklearn.utils.arpack import eigsh
+from sklearn.metrics.pairwise import rbf_kernel, euclidean_distances
+from sklearn.neighbors import kneighbors_graph
 
 def _graph_connected_component(graph, node_id):
     """Find the largest graph connected components that contains one
@@ -321,11 +324,10 @@ def spectral_embedding(adjacency, n_components=8, eigen_solver=None,
         else:
             return embedding[:n_components].T
     else:
-        data = SpectralEmbeddingOoSData(eigenvalues=-lambdas, eigenvectors=np.transpose(diffusion_map), dd=np.median(dd))
         if drop_first:
-            return embedding[1:n_components].T, data
+            return embedding[1:n_components].T, -lambdas, np.transpose(diffusion_map)
         else:
-            return embedding[:n_components].T, data
+            return embedding[:n_components].T, -lambdas, np.transpose(diffusion_map)
 
 
 class SpectralEmbedding(BaseEstimator):
@@ -488,18 +490,24 @@ class SpectralEmbedding(BaseEstimator):
                               "name or a callable. Got: %s") % self.affinity)
 
         affinity_matrix = self._get_affinity_matrix(X)
-        embedding = spectral_embedding(affinity_matrix,
-                                             n_components=self.n_components,
-                                             eigen_solver=self.eigen_solver,
-                                             random_state=random_state,
-                                             out_of_sample=self.out_of_sample)
-        if self.out_of_sample:
-            embedding[1].n_neighbors = self.n_neighbors
+        if not self.out_of_sample:
+            self.embedding_ = spectral_embedding(affinity_matrix,
+                                                 n_components=self.n_components,
+                                                 eigen_solver=self.eigen_solver,
+                                                 random_state=random_state,
+                                                 out_of_sample=self.out_of_sample)
+        else:
+            self.embedding_, self.eigenvals_, self.eigenvects_ = spectral_embedding(affinity_matrix,
+                                                 n_components=self.n_components,
+                                                 eigen_solver=self.eigen_solver,
+                                                 random_state=random_state,
+                                                 out_of_sample=self.out_of_sample)
+            self.n_neighbors_ = self.n_neighbors
             affinity_matrix = affinity_matrix.toarray().astype(bool)
-            embedding[1].neighbor_count = affinity_matrix.sum(axis=-1)
-            embedding[1].max_neighbor_dist = (affinity_matrix.astype(bool) * euclidean_distances(X)).max(axis=-1)
-            embedding[1].dataset = X
-        return embedding
+            self.neighbor_count_ = affinity_matrix.sum(axis=-1)
+            self.max_neighbor_dist_ = (affinity_matrix.astype(bool) * euclidean_distances(X)).max(axis=-1)
+            self.dataset_ = X
+        return self
 
     def fit_transform(self, X, y=None):
         """Fit the model from data in X and transform X.
@@ -519,64 +527,40 @@ class SpectralEmbedding(BaseEstimator):
         -------
         X_new: array-like, shape (n_samples, n_components)
         """
-        return self.fit(X)
+        self.fit(X)
+        return self.embedding_
 
-    def transform(self, data, point):
-        """transforms point according to data.
+    def transform(self, point):
+        """transforms point as Out of Sample for the last dataset trained.
 
         Parameters
         ----------
-        data : SpectralEmbeddingOoSData, for a learning dataset
-
         point : array, coordinates of a point
 
         Returns
         -------
         embedding : array (n_componens), embedding of a point
         """
-        distances = euclidean_distances(point, data.dataset).reshape(-1)
-        neighbors = np.array(sorted(zip(distances, range(data.dataset.shape[0])), key=lambda x: x[0])[: self.n_neighbors])
-        neighbors = set(neighbors[:, 1].astype(int))
-        for i in range(len(distances)):
-            if distances[i] < data.max_neighbor_dist[i]:
-                neighbors.add(i)
+        distances = euclidean_distances(point, self.dataset_).reshape(-1)
+        neighbors1 = np.array(sorted(zip(distances, range(self.dataset_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
+        neighbors1 = set(neighbors1[:, 1].astype(int))
+        neighbors2 = set()
+        for j in range(len(distances)):
+            if distances[j] < self.max_neighbor_dist_[j]:
+                neighbors2.add(j)
+        true_neighbors = neighbors1.intersection(neighbors2)
+        semi_neighbors = neighbors1.symmetric_difference(neighbors2)
+        dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
+                  (len(true_neighbors) + len(semi_neighbors)))
         return np.array(list(
-            (data.dd / sqrt(len(neighbors))) *
-            sum(
-                data.eigenvecs[k][i] / sqrt(data.neighbor_count[i])
-                for i in neighbors
+            (
+                sum(
+                self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
+                for j in true_neighbors
+                ) + sum(
+                self.eigenvects_[k][j] / (sqrt(dd) * sqrt(self.neighbor_count_[j]))
+                for j in semi_neighbors
+                )
             )
             for k in range(self.n_components)[::-1]
         ))
-
-class SpectralEmbeddingOoSData:
-    """Data for out of sample for Spectral embedding.
-
-    Parameters
-    -----------
-    dataset : array-like, shape (n_samples, n_features)
-            Training vector, where n_samples is the number of samples
-            and n_features is the number of features.
-
-            If affinity is "precomputed"
-            X : array-like, shape (n_samples, n_samples),
-            Interpret X as precomputed adjacency graph computed from
-            samples.
-
-    eigenvals : array, eigenvalues of kernal-matrix
-
-    eigenvects : array, eigenvectors of kernel-matrix
-
-    neighbor_count : array, amount of neighbors for each of points
-
-    max_neighbor_distances : array distance to the furthest of neighbors for each point
-
-    dd : float, nobody knows what te ... that is but it's taken from YOUR code!
-    """
-    def __init__(self, dataset=None, eigenvalues=None, eigenvectors=None, neighbor_count=None, max_neighbor_distances=None, dd=None):
-        self.dataset = dataset
-        self.eigenvals = eigenvalues
-        self.eigenvecs = eigenvectors
-        self.neighbor_count = neighbor_count
-        self.max_neighbor_dist = max_neighbor_distances
-        self.dd = dd
