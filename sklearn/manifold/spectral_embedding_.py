@@ -541,26 +541,55 @@ class SpectralEmbedding(BaseEstimator):
         -------
         embedding : array (n_componens), embedding of a point
         """
-        distances = euclidean_distances(point, self.dataset_).reshape(-1)
-        neighbors1 = np.array(sorted(zip(distances, range(self.dataset_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
-        neighbors1 = set(neighbors1[:, 1].astype(int))
-        neighbors2 = set()
-        for j in range(len(distances)):
-            if distances[j] < self.max_neighbor_dist_[j]:
-                neighbors2.add(j)
-        true_neighbors = neighbors1.intersection(neighbors2)
-        semi_neighbors = neighbors1.symmetric_difference(neighbors2)
-        dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
-                  (len(true_neighbors) + len(semi_neighbors)))
-        return np.array(list(
-            (
-                sum(
-                self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
-                for j in true_neighbors
-                ) + sum(
-                self.eigenvects_[k][j] / (sqrt(dd) * sqrt(self.neighbor_count_[j]))
-                for j in semi_neighbors
+        if (self.affinity == "nearest_neighbors"):
+            distances = euclidean_distances(point, self.dataset_).reshape(-1)
+            neighbors1 = np.array(sorted(zip(distances, range(self.dataset_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
+            neighbors1 = set(neighbors1[:, 1].astype(int))
+            neighbors2 = set()
+            for j in range(len(distances)):
+                if distances[j] < self.max_neighbor_dist_[j]:
+                    neighbors2.add(j)
+            true_neighbors = neighbors1.intersection(neighbors2)
+            semi_neighbors = neighbors1.symmetric_difference(neighbors2)
+            dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
+                      (len(true_neighbors) + len(semi_neighbors)))
+            return np.array(list(
+                (
+                    sum(
+                    self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
+                    for j in true_neighbors
+                    ) + sum(
+                    self.eigenvects_[k][j] / (dd * sqrt(self.neighbor_count_[j]))
+                    for j in semi_neighbors
+                    )
                 )
-            )
-            for k in range(self.n_components)[::-1]
-        ))
+                for k in range(self.n_components)[::-1]
+            ))
+        elif (self.affinity == "rbf"):
+            import math
+            distances = math.e ** ((euclidean_distances(point, self.dataset_).reshape(-1)) / (2 * self.gamma))
+            neighbors1 = np.array(
+                sorted(zip(distances, range(self.dataset_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
+            neighbors1 = set(neighbors1[:, 1].astype(int))
+            neighbors2 = set()
+            for j in range(len(distances)):
+                if distances[j] < self.max_neighbor_dist_[j]:
+                    neighbors2.add(j)
+            true_neighbors = neighbors1.intersection(neighbors2)
+            semi_neighbors = neighbors1.symmetric_difference(neighbors2)
+            dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
+                      (len(true_neighbors) + len(semi_neighbors)))
+            return np.array(list(
+                (
+                    sum(
+                        self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
+                        for j in true_neighbors
+                    ) + sum(
+                        self.eigenvects_[k][j] / (dd * sqrt(self.neighbor_count_[j]))
+                        for j in semi_neighbors
+                    )
+                )
+                for k in range(self.n_components)[::-1]
+            ))
+
+
