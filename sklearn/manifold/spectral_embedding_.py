@@ -490,6 +490,7 @@ class SpectralEmbedding(BaseEstimator):
                               "name or a callable. Got: %s") % self.affinity)
 
         affinity_matrix = self._get_affinity_matrix(X)
+        self.sample_dimentions_ = X.shape[1]
         if not self.out_of_sample:
             self.embedding_ = spectral_embedding(affinity_matrix,
                                                  n_components=self.n_components,
@@ -551,45 +552,46 @@ class SpectralEmbedding(BaseEstimator):
                     neighbors2.add(j)
             true_neighbors = neighbors1.intersection(neighbors2)
             semi_neighbors = neighbors1.symmetric_difference(neighbors2)
-            dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
-                      (len(true_neighbors) + len(semi_neighbors)))
+            #dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
+            #          (len(true_neighbors) + len(semi_neighbors)))
             return np.array(list(
                 (
                     sum(
                     self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
                     for j in true_neighbors
                     ) + sum(
-                    self.eigenvects_[k][j] / (dd * sqrt(self.neighbor_count_[j]))
+                    self.eigenvects_[k][j] / (2 * sqrt(self.neighbor_count_[j]))
                     for j in semi_neighbors
                     )
                 )
                 for k in range(self.n_components)[::-1]
             ))
-        elif (self.affinity == "rbf"):
-            import math
-            distances = math.e ** ((euclidean_distances(point, self.dataset_).reshape(-1)) / (2 * self.gamma))
-            neighbors1 = np.array(
-                sorted(zip(distances, range(self.dataset_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
+        else:
+            print("only KNN is supported")
+            exit(1)
+
+    def reconstruct(self, point):
+        """transforms point as Out of Sample for the last dataset trained.
+
+        Parameters
+        ----------
+        point : array, coordinates of a point
+
+        Returns
+        -------
+        embedding : array (n_componens), embedding of a point
+        """
+
+        if (self.affinity == "nearest_neighbors"):
+            distances = euclidean_distances(point, self.embedding_).reshape(-1)
+            neighbors1 = np.array(sorted(zip(distances, range(self.embedding_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
             neighbors1 = set(neighbors1[:, 1].astype(int))
             neighbors2 = set()
             for j in range(len(distances)):
                 if distances[j] < self.max_neighbor_dist_[j]:
                     neighbors2.add(j)
             true_neighbors = neighbors1.intersection(neighbors2)
-            semi_neighbors = neighbors1.symmetric_difference(neighbors2)
-            dd = sqrt(((self.dataset_.shape[0] + 1) - (len(true_neighbors) + len(semi_neighbors) / 2)) /
-                      (len(true_neighbors) + len(semi_neighbors)))
-            return np.array(list(
-                (
-                    sum(
-                        self.eigenvects_[k][j] / sqrt(self.neighbor_count_[j])
-                        for j in true_neighbors
-                    ) + sum(
-                        self.eigenvects_[k][j] / (dd * sqrt(self.neighbor_count_[j]))
-                        for j in semi_neighbors
-                    )
-                )
-                for k in range(self.n_components)[::-1]
-            ))
-
-
+            return sum(self.dataset_[j] for j in true_neighbors) / len(true_neighbors)
+        else:
+            print("only KNN is supported")
+            exit(1)
