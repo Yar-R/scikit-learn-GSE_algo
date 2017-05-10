@@ -571,27 +571,33 @@ class SpectralEmbedding(BaseEstimator):
             exit(1)
 
     def reconstruct(self, point):
-        """transforms point as Out of Sample for the last dataset trained.
+        """
+        Reconstructs the point back into original dataset.
 
         Parameters
         ----------
-        point : array, coordinates of a point
+        point : array, coordinates of a point in the embedding space.
 
         Returns
         -------
-        embedding : array (n_componens), embedding of a point
+        point : np.array coordinates of a point in the original dataset space.
         """
-
-        if (self.affinity == "nearest_neighbors"):
-            distances = euclidean_distances(point, self.embedding_).reshape(-1)
-            neighbors1 = np.array(sorted(zip(distances, range(self.embedding_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
-            neighbors1 = set(neighbors1[:, 1].astype(int))
-            neighbors2 = set()
-            for j in range(len(distances)):
-                if distances[j] < self.max_neighbor_dist_[j]:
-                    neighbors2.add(j)
-            true_neighbors = neighbors1.intersection(neighbors2)
-            return sum(self.dataset_[j] for j in true_neighbors) / len(true_neighbors)
-        else:
-            print("only KNN is supported")
-            exit(1)
+        distances = euclidean_distances(point, self.embedding_).reshape(-1)
+        neighbors1 = np.array(
+            sorted(zip(distances, range(self.embedding_.shape[0])), key=lambda x: x[0])[: self.n_neighbors_])
+        neighbors1 = set(neighbors1[:, 1].astype(int))
+        neighbors2 = set()
+        for j in range(len(distances)):
+            if distances[j] < self.max_neighbor_dist_[j]:
+                neighbors2.add(j)
+        true_neighbors = neighbors1.intersection(neighbors2)
+        return np.array(list(
+            (
+                (sum(
+                    self.dataset_[j][k]
+                    for j in true_neighbors
+                )
+                ) / (len(true_neighbors))
+            )
+            for k in range(self.sample_dimentions_)
+        ))
