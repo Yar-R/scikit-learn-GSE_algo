@@ -571,8 +571,7 @@ class SpectralEmbedding(BaseEstimator):
             exit(1)
 
     def reconstruct(self, point):
-        """
-        Reconstructs the point back into original dataset.
+        """reconstructs the point back into original dataset.
 
         Parameters
         ----------
@@ -601,3 +600,4 @@ class SpectralEmbedding(BaseEstimator):
             )
             for k in range(self.sample_dimentions_)
         ))
+
