@@ -15,7 +15,9 @@
   * На основе статьи "Out-of-Sample Extensions for LLE, Isomap, MDS, Eigenmaps, and Spectral Clustering" Yoshua Bengio, Jean-François Paiement and Pascal Vincent.
   * С учётом использования в scikit-learn нормированной версии Лапласиана.
   * на данный момент работает только для affinity="nearest_neighbors", eigen_solver='arpack'
-2) OoS для Multi-dimentional Scaling
+2) reconstruct (inverse) для SE
+  * на основе среднего n ближайших
+3) OoS для Multi-dimentional Scaling
   * На основе модификации алгоритма SMACOF применимой к 1 новой точке и работающей за O(nd), где n - количество точек в выборке обучения, а d - размерность пространства выборки.
   * на данный момент работает только для metric=True, dissimilarity="eucledian"
 
